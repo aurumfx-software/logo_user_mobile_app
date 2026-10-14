@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -68,34 +68,39 @@ function TickerBar({ items }) {
   );
 }
 
-// ─── Single slide ───────────────────────────────────────────────────────────────
-function AdSlide({ item, isActive }) {
-  const videoRef = useRef(null);
-  const isVideo = !!(item.videoUrl);
+// ─── Video slide (separate component so useVideoPlayer is unconditional) ─────
+function VideoAdSlide({ item, isActive }) {
+  const player = useVideoPlayer(item.videoUrl, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
 
   useEffect(() => {
-    if (!videoRef.current) return;
     if (isActive) {
-      videoRef.current.playAsync().catch(() => {});
+      player.play();
     } else {
-      videoRef.current.pauseAsync().catch(() => {});
+      player.pause();
     }
-  }, [isActive]);
+  }, [isActive, player]);
+
+  return (
+    <VideoView
+      style={styles.slideMedia}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+// ─── Single slide ───────────────────────────────────────────────────────────────
+function AdSlide({ item, isActive }) {
+  const isVideo = !!(item.videoUrl);
 
   return (
     <View style={styles.slide}>
       {isVideo ? (
-        <Video
-          ref={videoRef}
-          source={{ uri: item.videoUrl }}
-          style={styles.slideMedia}
-          resizeMode={ResizeMode.COVER}
-          isLooping
-          isMuted
-          shouldPlay={isActive}
-          posterSource={item.image ? { uri: item.image } : undefined}
-          posterStyle={styles.slideMedia}
-        />
+        <VideoAdSlide item={item} isActive={isActive} />
       ) : (
         <Image
           source={{ uri: item.image }}
