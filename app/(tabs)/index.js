@@ -29,6 +29,7 @@ import BusinessCard from '../../components/BusinessCard';
 import CategoryIcon from '../../components/CategoryIcon';
 import SearchBar from '../../components/SearchBar';
 import PlaceCard from '../../components/PlaceCard';
+import AdBannerSlider from '../../components/AdBannerSlider';
 
 const { width } = Dimensions.get('window');
 
@@ -92,33 +93,8 @@ export default function HomeScreen() {
     </View>
   );
 
-  const renderBanner = () => (
-    <LinearGradient
-      colors={[Colors.primary, Colors.primaryDark]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.banner}
-    >
-      <View style={styles.bannerContent}>
-        <View style={styles.bannerTextContent}>
-          <Text style={styles.bannerTitle}>Discover Local{'\n'}Businesses</Text>
-          <Text style={styles.bannerSubtitle}>Find shops, services & more near you</Text>
-          <TouchableOpacity
-            style={styles.bannerButton}
-            onPress={() => router.push('/(tabs)/search')}
-          >
-            <Text style={styles.bannerButtonText}>Explore Now</Text>
-            <Ionicons name="arrow-forward" size={16} color={Colors.primary} />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.bannerIllustration}>
-          <View style={styles.illustrationCircle}>
-            <Ionicons name="location" size={40} color={Colors.primary} />
-          </View>
-        </View>
-      </View>
-    </LinearGradient>
-  );
+  // replaced by AdBannerSlider above scroll content
+  const _renderBanner = null;
 
   const renderCategories = () => (
     <View style={styles.section}>
@@ -136,35 +112,8 @@ export default function HomeScreen() {
     </View>
   );
 
-  const renderPromotions = () =>
-    promotions.length > 0 && (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Special Offers</Text>
-        </View>
-        <FlatList
-          data={promotions}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.promoCard}
-              onPress={() => item.merchantId && router.push(`/business/${item.merchantId}`)}
-            >
-              <Image source={{ uri: item.image }} style={styles.promoImage} />
-              {!!item.title && (
-                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.promoOverlay}>
-                  <Text style={styles.promoTitle} numberOfLines={1}>{item.title}</Text>
-                </LinearGradient>
-              )}
-            </TouchableOpacity>
-          )}
-          contentContainerStyle={styles.horizontalList}
-        />
-      </View>
-    );
+  // promotions now shown in AdBannerSlider at top
+  const _renderPromotions = null;
 
   const renderNearby = () => (
     <View style={styles.section}>
@@ -258,13 +207,18 @@ export default function HomeScreen() {
           }
           contentContainerStyle={styles.scrollContent}
         >
+          {/* ── Ad banner at top: ticker + full-width carousel ── */}
+          <AdBannerSlider
+            promotions={loading ? [] : promotions}
+            onPress={(item) => item.merchantId && router.push(`/business/${item.merchantId}`)}
+          />
+
           {renderHeader()}
 
           <View style={styles.searchWrapper}>
             <SearchBar onPress={() => router.push('/(tabs)/search')} />
           </View>
 
-          {renderBanner()}
           {loading ? (
             <View style={{ paddingHorizontal: Spacing.xl, marginTop: Spacing.xl }}>
               <CardShimmer />
@@ -281,7 +235,6 @@ export default function HomeScreen() {
             </View>
           ) : (
             <>
-              {renderPromotions()}
               {renderCategories()}
               {renderQuickActions()}
               {renderPlaces()}
