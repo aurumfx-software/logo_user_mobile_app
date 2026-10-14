@@ -15,8 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { getBusinessById } from '../../constants/businesses';
-import { categories } from '../../constants/categories';
+import { fetchMerchantById, fetchCategories } from '../../services/api';
+import useApi from '../../hooks/useApi';
+import { ActivityIndicator } from 'react-native';
 import RatingStars from '../../components/RatingStars';
 
 const { width } = Dimensions.get('window');
@@ -26,8 +27,32 @@ export default function BusinessDetailScreen() {
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
 
-  const business = getBusinessById(id);
-  const category = categories.find(c => c.id === business?.category);
+  const { data, loading } = useApi(
+    async () => {
+      const [business, cats] = await Promise.all([
+        fetchMerchantById(id),
+        fetchCategories().catch(() => []),
+      ]);
+      return { business, category: cats.find((c) => c.id === business?.category) };
+    },
+    [id],
+    { business: null, category: null }
+  );
+  const business = data.business;
+  const category = data.category || {
+    name: business?.categoryName,
+    icon: 'pricetag-outline',
+    color: Colors.primary,
+    bgColor: '#F0EFFF',
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </SafeAreaView>
+    );
+  }
 
   if (!business) {
     return (

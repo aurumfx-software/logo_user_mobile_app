@@ -12,8 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { businesses } from '../../constants/businesses';
-import { categories } from '../../constants/categories';
+import { fetchMerchants, fetchCategories } from '../../services/api';
+import useApi from '../../hooks/useApi';
 
 const { width, height } = Dimensions.get('window');
 
@@ -22,9 +22,20 @@ export default function MapScreen() {
   const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
-  const filteredBusinesses = selectedCategory
+  const { data } = useApi(
+    async () => {
+      const [businesses, categories] = await Promise.all([fetchMerchants(), fetchCategories()]);
+      const used = new Set(businesses.map((b) => b.category));
+      return { businesses, categories: categories.filter((c) => used.has(c.id)) };
+    },
+    [],
+    { businesses: [], categories: [] }
+  );
+  const { businesses, categories } = data;
+
+  const filteredBusinesses = (selectedCategory
     ? businesses.filter(b => b.category === selectedCategory)
-    : businesses;
+    : businesses).slice(0, 40);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

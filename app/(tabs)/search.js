@@ -1,5 +1,5 @@
 // Search / Explore Screen
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,53 +11,66 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { categories } from '../../constants/categories';
-import { businesses, searchBusinesses } from '../../constants/businesses';
+import { fetchMerchants, fetchCategories } from '../../services/api';
+import useApi from '../../hooks/useApi';
+import { useLocalSearchParams } from 'expo-router';
+import { ActivityIndicator } from 'react-native';
 import BusinessCard from '../../components/BusinessCard';
 import SearchBar from '../../components/SearchBar';
 
-const recentSearches = ['Restaurants', 'Pharmacy', 'ATM near me', 'Hair salon'];
+const recentSearches = ['Restaurants', 'Pharmacy', 'Advocates', 'Physiotherapy'];
+
+const matches = (b, q) => {
+  const s = q.toLowerCase();
+  return (
+    b.name.toLowerCase().includes(s) ||
+    b.categoryName.toLowerCase().includes(s) ||
+    b.city.toLowerCase().includes(s) ||
+    b.address.toLowerCase().includes(s) ||
+    b.tags.some((t) => String(t).toLowerCase().includes(s)) ||
+    b.description.toLowerCase().includes(s)
+  );
+};
 
 export default function SearchScreen() {
+  const { location } = useLocalSearchParams();
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [results, setResults] = useState(businesses);
 
-  const handleSearch = useCallback((text) => {
-    setQuery(text);
-    if (text.length > 0) {
-      setResults(searchBusinesses(text));
-      setSelectedCategory(null);
-    } else if (selectedCategory) {
-      setResults(businesses.filter(b => b.category === selectedCategory));
-    } else {
-      setResults(businesses);
-    }
-  }, [selectedCategory]);
+  const { data, loading } = useApi(
+    async () => {
+      const [businesses, categories] = await Promise.all([fetchMerchants(), fetchCategories()]);
+      return { businesses, categories };
+    },
+    [],
+    { businesses: [], categories: [] }
+  );
+  const { businesses } = data;
+  // Only show category chips that actually have merchants
+  const categories = useMemo(() => {
+    const used = new Set(businesses.map((b) => b.category));
+    return data.categories.filter((c) => used.has(c.id));
+  }, [data, businesses]);
+
+  const results = useMemo(() => {
+    let list = businesses;
+    if (location) list = list.filter((b) => b.city.toLowerCase() === String(location).toLowerCase());
+    if (selectedCategory) list = list.filter((b) => b.category === selectedCategory);
+    if (query) list = list.filter((b) => matches(b, query));
+    return list;
+  }, [businesses, location, selectedCategory, query]);
+
+  const handleSearch = useCallback((text) => setQuery(text), []);
 
   const handleCategoryFilter = (catId) => {
-    if (selectedCategory === catId) {
-      setSelectedCategory(null);
-      if (query) {
-        setResults(searchBusinesses(query));
-      } else {
-        setResults(businesses);
-      }
-    } else {
-      setSelectedCategory(catId);
-      const filtered = businesses.filter(b => b.category === catId);
-      if (query) {
-        setResults(filtered.filter(b =>
-          b.name.toLowerCase().includes(query.toLowerCase()) ||
-          b.tags.some(t => t.toLowerCase().includes(query.toLowerCase()))
-        ));
-      } else {
-        setResults(filtered);
-      }
-    }
+    setSelectedCategory((prev) => (prev === catId ? null : catId));
   };
 
-  const renderEmptySearch = () => (
+  const renderEmptySearch = () => loading ? (
+    <View style={styles.emptyContainer}>
+      <ActivityIndicator size="large" color={Colors.primary} />
+    </View>
+  ) : (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconBg}>
         <Ionicons name="search-outline" size={48} color={Colors.primary} />
@@ -70,7 +83,7 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Explore</Text>
+        <Text style={styles.title}>{location ? `Explore ${location}` : 'Explore'}</Text>
       </View>
 
       <View style={styles.searchWrapper}>

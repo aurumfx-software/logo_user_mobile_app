@@ -1,5 +1,5 @@
 // Favorites Screen - Saved/bookmarked businesses
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,15 +12,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { businesses } from '../../constants/businesses';
-import { categories } from '../../constants/categories';
-
-// Mock favorites - using first few businesses
-const initialFavorites = businesses.slice(0, 5);
+import { fetchMerchants, fetchCategories } from '../../services/api';
 
 export default function FavoritesScreen() {
   const router = useRouter();
-  const [favorites, setFavorites] = useState(initialFavorites);
+  const [favorites, setFavorites] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    Promise.all([fetchMerchants(), fetchCategories()])
+      .then(([list, cats]) => {
+        setFavorites(list.slice(0, 5));
+        setCategories(cats);
+      })
+      .catch(() => {});
+  }, []);
 
   const removeFavorite = (id) => {
     setFavorites(prev => prev.filter(b => b.id !== id));

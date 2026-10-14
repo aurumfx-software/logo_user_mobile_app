@@ -1,5 +1,5 @@
 // Home Screen - Discover nearby businesses
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,17 +17,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { categories } from '../../constants/categories';
-import { businesses, featuredBusinesses, nearbyBusinesses } from '../../constants/businesses';
+import {
+  fetchCategories,
+  fetchMerchants,
+  fetchPromotions,
+  derivePlaces,
+} from '../../services/api';
+import useApi from '../../hooks/useApi';
+import { CardShimmer } from '../../components/ShimmerLoader';
 import BusinessCard from '../../components/BusinessCard';
 import CategoryIcon from '../../components/CategoryIcon';
 import SearchBar from '../../components/SearchBar';
+import PlaceCard from '../../components/PlaceCard';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -46,10 +52,27 @@ export default function HomeScreen() {
     ]).start();
   }, []);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  };
+  const { data, loading, error, refreshing, refresh, reload } = useApi(
+    async (force) => {
+      const [categories, merchants, promotions] = await Promise.all([
+        fetchCategories({ force }),
+        fetchMerchants({}, { force }),
+        fetchPromotions().catch(() => []),
+      ]);
+      return { categories, merchants, promotions };
+    },
+    [],
+    { categories: [], merchants: [], promotions: [] }
+  );
+
+  const categories = data.categories.slice(0, 12);
+  const businesses = data.merchants;
+  const nearbyBusinesses = businesses.slice(0, 10);
+  const featuredBusinesses = businesses.filter((b) => b.isFeatured);
+  const places = derivePlaces(businesses);
+  const promotions = data.promotions;
+
+  const onRefresh = () => refresh();
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -101,7 +124,7 @@ export default function HomeScreen() {
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Categories</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/search')}>
           <Text style={styles.viewAll}>View All</Text>
         </TouchableOpacity>
       </View>
@@ -112,6 +135,36 @@ export default function HomeScreen() {
       </View>
     </View>
   );
+
+  const renderPromotions = () =>
+    promotions.length > 0 && (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Special Offers</Text>
+        </View>
+        <FlatList
+          data={promotions}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.promoCard}
+              onPress={() => item.merchantId && router.push(`/business/${item.merchantId}`)}
+            >
+              <Image source={{ uri: item.image }} style={styles.promoImage} />
+              {!!item.title && (
+                <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.promoOverlay}>
+                  <Text style={styles.promoTitle} numberOfLines={1}>{item.title}</Text>
+                </LinearGradient>
+              )}
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.horizontalList}
+        />
+      </View>
+    );
 
   const renderNearby = () => (
     <View style={styles.section}>
@@ -143,6 +196,39 @@ export default function HomeScreen() {
       {featuredBusinesses.slice(0, 4).map((business) => (
         <BusinessCard key={business.id} business={business} variant="vertical" />
       ))}
+    </View>
+  );
+
+  const renderPlaces = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="location" size={20} color={Colors.primary} style={{ marginRight: 6 }} />
+          <Text style={styles.sectionTitle}>Places</Text>
+        </View>
+        <TouchableOpacity onPress={() => router.push('/places')}>
+          <Text style={styles.viewAll}>View All ({places.length})</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        data={places}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <PlaceCard
+            place={item}
+            variant="horizontal"
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/search',
+                params: { location: item.name },
+              })
+            }
+          />
+        )}
+        contentContainerStyle={styles.horizontalList}
+      />
     </View>
   );
 
@@ -179,10 +265,30 @@ export default function HomeScreen() {
           </View>
 
           {renderBanner()}
-          {renderCategories()}
-          {renderQuickActions()}
-          {renderNearby()}
-          {renderFeatured()}
+          {loading ? (
+            <View style={{ paddingHorizontal: Spacing.xl, marginTop: Spacing.xl }}>
+              <CardShimmer />
+              <CardShimmer />
+              <CardShimmer />
+            </View>
+          ) : error ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="cloud-offline-outline" size={36} color={Colors.primary} />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={() => reload()}>
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {renderPromotions()}
+              {renderCategories()}
+              {renderQuickActions()}
+              {renderPlaces()}
+              {renderNearby()}
+              {renderFeatured()}
+            </>
+          )}
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>© 2024 AurumFX Pvt Ltd</Text>
@@ -200,6 +306,51 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 20,
+  },
+  promoCard: {
+    width: width * 0.75,
+    height: 140,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    marginRight: Spacing.md,
+    backgroundColor: Colors.surface,
+    ...Shadow.small,
+  },
+  promoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  promoOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: Spacing.md,
+  },
+  promoTitle: {
+    color: '#FFFFFF',
+    fontSize: FontSize.md,
+    fontWeight: '700',
+  },
+  errorBox: {
+    alignItems: 'center',
+    padding: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: FontSize.sm,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   header: {
     flexDirection: 'row',

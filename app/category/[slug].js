@@ -11,16 +11,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { getBusinessesByCategory } from '../../constants/businesses';
-import { categories } from '../../constants/categories';
+import { fetchCategories, fetchMerchants, slugify } from '../../services/api';
+import useApi from '../../hooks/useApi';
+import { CardShimmer } from '../../components/ShimmerLoader';
 import BusinessCard from '../../components/BusinessCard';
+import { Image, ActivityIndicator } from 'react-native';
 
 export default function CategoryScreen() {
   const { slug } = useLocalSearchParams();
   const router = useRouter();
 
-  const category = categories.find(c => c.slug === slug);
-  const categoryBusinesses = getBusinessesByCategory(slug);
+  const { data, loading } = useApi(
+    async () => {
+      const cats = await fetchCategories();
+      const category = cats.find((c) => c.slug === slug) || null;
+      const list = await fetchMerchants({ category: category?.name || slug });
+      return { category, businesses: list.filter((b) => b.category === slugify(category?.name || slug)) };
+    },
+    [slug],
+    { category: null, businesses: [] }
+  );
+  const category = data.category;
+  const categoryBusinesses = data.businesses;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -31,7 +43,11 @@ export default function CategoryScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={[styles.headerIcon, { backgroundColor: category?.bgColor }]}>
-            <Ionicons name={category?.icon} size={20} color={category?.color} />
+            {category?.iconUrl ? (
+              <Image source={{ uri: category.iconUrl }} style={{ width: 22, height: 22 }} />
+            ) : (
+              <Ionicons name={category?.icon || 'pricetag-outline'} size={20} color={category?.color} />
+            )}
           </View>
           <Text style={styles.headerTitle}>{category?.name || 'Category'}</Text>
         </View>
@@ -44,7 +60,7 @@ export default function CategoryScreen() {
       <View style={styles.descriptionCard}>
         <Text style={styles.descriptionText}>{category?.description}</Text>
         <View style={styles.countBadge}>
-          <Text style={styles.countText}>{categoryBusinesses.length} places</Text>
+          <Text style={styles.countText}>{loading ? '…' : categoryBusinesses.length} places</Text>
         </View>
       </View>
 
@@ -56,13 +72,20 @@ export default function CategoryScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
+          loading ? (
+            <View>
+              <CardShimmer />
+              <CardShimmer />
+            </View>
+          ) : (
           <View style={styles.emptyContainer}>
             <View style={[styles.emptyIconBg, { backgroundColor: category?.bgColor }]}>
-              <Ionicons name={category?.icon} size={40} color={category?.color} />
+              <Ionicons name={category?.icon || 'pricetag-outline'} size={40} color={category?.color} />
             </View>
             <Text style={styles.emptyTitle}>No {category?.name} Found</Text>
             <Text style={styles.emptySubtitle}>We couldn't find any businesses in this category near you</Text>
           </View>
+          )
         }
       />
     </SafeAreaView>

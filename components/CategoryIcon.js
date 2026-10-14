@@ -1,6 +1,6 @@
 // CategoryIcon Component - Animated category icon button
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { BorderRadius, Spacing, FontSize } from '../constants/theme';
@@ -19,7 +19,11 @@ export default function CategoryIcon({ category }) {
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress} activeOpacity={0.7}>
       <View style={[styles.iconContainer, { backgroundColor: category.bgColor }]}>
-        <Ionicons name={category.icon} size={26} color={category.color} />
+        {category.iconUrl ? (
+          <Image source={{ uri: category.iconUrl }} style={styles.iconImage} resizeMode="contain" />
+        ) : (
+          <Ionicons name={category.icon} size={26} color={category.color} />
+        )}
       </View>
       <Text style={styles.label} numberOfLines={1}>{category.name}</Text>
     </TouchableOpacity>
@@ -38,6 +42,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  iconImage: {
+    width: 34,
+    height: 34,
   },
   label: {
     fontSize: FontSize.xs,
