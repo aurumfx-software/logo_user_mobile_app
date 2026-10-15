@@ -69,19 +69,28 @@ function TickerBar({ items }) {
 }
 
 // ─── Video slide (separate component so useVideoPlayer is unconditional) ─────
-function VideoAdSlide({ item, isActive }) {
+function VideoAdSlide({ item, isActive, onVideoEnd }) {
   const player = useVideoPlayer(item.videoUrl, (p) => {
-    p.loop = true;
+    p.loop = false;
     p.muted = true;
   });
 
   useEffect(() => {
     if (isActive) {
+      // Restart from beginning when this slide becomes active
+      player.currentTime = 0;
       player.play();
     } else {
       player.pause();
     }
   }, [isActive, player]);
+
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      if (onVideoEnd) onVideoEnd();
+    });
+    return () => sub.remove();
+  }, [player, onVideoEnd]);
 
   return (
     <VideoView
@@ -94,13 +103,13 @@ function VideoAdSlide({ item, isActive }) {
 }
 
 // ─── Single slide ───────────────────────────────────────────────────────────────
-function AdSlide({ item, isActive }) {
+function AdSlide({ item, isActive, onVideoEnd }) {
   const isVideo = !!(item.videoUrl);
 
   return (
     <View style={styles.slide}>
       {isVideo ? (
-        <VideoAdSlide item={item} isActive={isActive} />
+        <VideoAdSlide item={item} isActive={isActive} onVideoEnd={onVideoEnd} />
       ) : (
         <Image
           source={{ uri: item.image }}
@@ -153,18 +162,32 @@ export default function AdBannerSlider({ promotions = [], onPress }) {
     [slides.length]
   );
 
-  // auto-play
+  // Advance to next slide
+  const advanceSlide = useCallback(() => {
+    setActiveIndex((prev) => {
+      const next = (prev + 1) % slides.length;
+      flatListRef.current?.scrollToIndex({ index: next, animated: true });
+      return next;
+    });
+  }, [slides.length]);
+
+  // Called when a video slide finishes playing
+  const onVideoEnd = useCallback(() => {
+    advanceSlide();
+  }, [advanceSlide]);
+
+  // auto-play: only run timer for image slides
   useEffect(() => {
     if (slides.length <= 1) return;
-    timerRef.current = setInterval(() => {
-      setActiveIndex((prev) => {
-        const next = (prev + 1) % slides.length;
-        flatListRef.current?.scrollToIndex({ index: next, animated: true });
-        return next;
-      });
+    const currentSlide = slides[activeIndex];
+    const isVideo = !!(currentSlide?.videoUrl);
+    // For video slides, don't start the timer — wait for onVideoEnd
+    if (isVideo) return;
+    timerRef.current = setTimeout(() => {
+      advanceSlide();
     }, AUTO_PLAY_MS);
-    return () => clearInterval(timerRef.current);
-  }, [slides.length]);
+    return () => clearTimeout(timerRef.current);
+  }, [slides.length, activeIndex, advanceSlide]);
 
   if (!slides.length) return null;
 
@@ -195,7 +218,7 @@ export default function AdBannerSlider({ promotions = [], onPress }) {
               onPress={() => onPress && onPress(item)}
               style={{ width: SCREEN_WIDTH }}
             >
-              <AdSlide item={item} isActive={index === activeIndex} />
+              <AdSlide item={item} isActive={index === activeIndex} onVideoEnd={onVideoEnd} />
             </TouchableOpacity>
           )}
         />

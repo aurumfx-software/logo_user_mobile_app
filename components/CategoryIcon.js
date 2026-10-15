@@ -33,7 +33,7 @@ export default function CategoryIcon({ category }) {
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    width: 75,
+    width: '100%',
     gap: Spacing.sm,
   },
   iconContainer: {

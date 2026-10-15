@@ -1,5 +1,5 @@
 // Home Screen - Discover nearby businesses
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,9 +21,10 @@ import {
   fetchCategories,
   fetchMerchants,
   fetchPromotions,
-  derivePlaces,
 } from '../../services/api';
 import useApi from '../../hooks/useApi';
+import useUserLocation from '../../hooks/useUserLocation';
+import { derivePlacesNearUser, pickNearbyBusinesses } from '../../utils/geo';
 import { CardShimmer } from '../../components/ShimmerLoader';
 import BusinessCard from '../../components/BusinessCard';
 import CategoryIcon from '../../components/CategoryIcon';
@@ -32,9 +33,12 @@ import PlaceCard from '../../components/PlaceCard';
 import AdBannerSlider from '../../components/AdBannerSlider';
 
 const { width } = Dimensions.get('window');
+const CATEGORY_COLUMNS = 5;
+const MAX_HOME_CATEGORIES = CATEGORY_COLUMNS * 3;
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { location: userLocation, status: locationStatus } = useUserLocation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -58,7 +62,7 @@ export default function HomeScreen() {
       const [categories, merchants, promotions] = await Promise.all([
         fetchCategories({ force }),
         fetchMerchants({}, { force }),
-        fetchPromotions().catch(() => []),
+        fetchPromotions({ placement: 'Home Top' }).catch(() => []),
       ]);
       return { categories, merchants, promotions };
     },
@@ -66,12 +70,35 @@ export default function HomeScreen() {
     { categories: [], merchants: [], promotions: [] }
   );
 
-  const categories = data.categories.slice(0, 12);
+  // Sort categories by actual merchant count so popular ones appear first
+  const categoryCounts = {};
+  data.merchants.forEach((m) => {
+    const key = m.category; // slug
+    categoryCounts[key] = (categoryCounts[key] || 0) + 1;
+  });
+  const sortedCategories = [...data.categories].sort(
+    (a, b) => (categoryCounts[b.slug] || 0) - (categoryCounts[a.slug] || 0)
+  );
+  let homeCategoryCount = Math.min(sortedCategories.length, MAX_HOME_CATEGORIES);
+  if (homeCategoryCount % CATEGORY_COLUMNS !== 0) {
+    const fullRowCount =
+      Math.ceil(homeCategoryCount / CATEGORY_COLUMNS) * CATEGORY_COLUMNS;
+    homeCategoryCount = Math.min(sortedCategories.length, fullRowCount);
+  }
+  const categories = sortedCategories.slice(0, homeCategoryCount);
   const businesses = data.merchants;
-  const nearbyBusinesses = businesses.slice(0, 10);
+  const nearbyBusinesses = useMemo(
+    () => pickNearbyBusinesses(businesses, userLocation, 10),
+    [businesses, userLocation]
+  );
   const featuredBusinesses = businesses.filter((b) => b.isFeatured);
-  const places = derivePlaces(businesses);
+  const places = useMemo(
+    () => derivePlacesNearUser(businesses, userLocation, 12),
+    [businesses, userLocation]
+  );
   const promotions = data.promotions;
+  const locationLabel =
+    locationStatus === 'granted' && userLocation?.label ? userLocation.label : null;
 
   const onRefresh = () => refresh();
 
@@ -79,7 +106,9 @@ export default function HomeScreen() {
     <View style={styles.header}>
       <View>
         <Text style={styles.greeting}>Hello! 👋</Text>
-        <Text style={styles.subtitle}>What do you need today?</Text>
+        <Text style={styles.subtitle}>
+          {locationLabel ? `Showing places near ${locationLabel}` : 'What do you need today?'}
+        </Text>
       </View>
       <View style={styles.headerRight}>
         <TouchableOpacity style={styles.notifButton}>
@@ -106,7 +135,9 @@ export default function HomeScreen() {
       </View>
       <View style={styles.categoryGrid}>
         {categories.map((category) => (
-          <CategoryIcon key={category.id} category={category} />
+          <View key={category.id} style={styles.categoryGridItem}>
+            <CategoryIcon category={category} />
+          </View>
         ))}
       </View>
     </View>
@@ -118,8 +149,17 @@ export default function HomeScreen() {
   const renderNearby = () => (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Near You</Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/search')}>
+        <Text style={styles.sectionTitle}>
+          {locationLabel ? `Near ${locationLabel}` : 'Near You'}
+        </Text>
+        <TouchableOpacity
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)/search',
+              params: userLocation?.city ? { location: userLocation.city } : undefined,
+            })
+          }
+        >
           <Text style={styles.viewAll}>View All</Text>
         </TouchableOpacity>
       </View>
@@ -153,7 +193,9 @@ export default function HomeScreen() {
       <View style={styles.sectionHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Ionicons name="location" size={20} color={Colors.primary} style={{ marginRight: 6 }} />
-          <Text style={styles.sectionTitle}>Places</Text>
+          <Text style={styles.sectionTitle}>
+            {locationLabel ? 'Nearby Places' : 'Places'}
+          </Text>
         </View>
         <TouchableOpacity onPress={() => router.push('/places')}>
           <Text style={styles.viewAll}>View All ({places.length})</Text>
@@ -446,8 +488,12 @@ const styles = StyleSheet.create({
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     rowGap: Spacing.lg,
+  },
+  categoryGridItem: {
+    width: `${100 / CATEGORY_COLUMNS}%`,
+    alignItems: 'center',
   },
 
   // Quick Actions

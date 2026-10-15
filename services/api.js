@@ -178,10 +178,15 @@ export async function fetchCategories({ force = false } = {}) {
 }
 
 export async function fetchPromotions(params = {}) {
-  const json = await request(`/promotions${buildQuery({ status: 'active', ...params })}`);
-  return extractList(json, 'promotions')
+  const { placement, ...queryParams } = params;
+  const json = await request(`/promotions${buildQuery({ status: 'active', ...queryParams })}`);
+  let list = extractList(json, 'promotions')
     .map(normalizePromotion)
-    .filter((p) => p.image);
+    .filter((p) => p.image || p.videoUrl);
+  if (placement) {
+    list = list.filter((p) => p.placement === placement);
+  }
+  return list;
 }
 
 // Places are derived from merchant cities (the web app does the same)

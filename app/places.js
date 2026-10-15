@@ -1,5 +1,5 @@
 // Places Screen - All Towns and Locations matching mylocalityinfo.com/place.php
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../constants/theme';
-import { fetchMerchants, derivePlaces } from '../services/api';
+import { fetchMerchants } from '../services/api';
 import useApi from '../hooks/useApi';
+import useUserLocation from '../hooks/useUserLocation';
+import { derivePlacesNearUser } from '../utils/geo';
 import PlaceCard from '../components/PlaceCard';
 
 const { width } = Dimensions.get('window');
@@ -24,7 +26,12 @@ const { width } = Dimensions.get('window');
 export default function PlacesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const { data: places } = useApi(async () => derivePlaces(await fetchMerchants()), [], []);
+  const { location: userLocation } = useUserLocation();
+  const { data: merchants } = useApi(async () => await fetchMerchants(), [], []);
+  const places = useMemo(
+    () => derivePlacesNearUser(merchants, userLocation, merchants.length || 0),
+    [merchants, userLocation]
+  );
 
   const filteredPlaces = places.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

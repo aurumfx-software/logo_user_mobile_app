@@ -7,9 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "logo",
     "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#6C63FF",
@@ -24,8 +21,20 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Logo uses your location to show nearby businesses and places."
+      }
+    },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Logo to use your location to show nearby businesses and places."
+        }
+      ],
       [
         "expo-splash-screen",
         {
