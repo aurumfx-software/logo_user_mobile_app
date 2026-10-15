@@ -59,15 +59,19 @@ export default function HomeScreen() {
 
   const { data, loading, error, refreshing, refresh, reload } = useApi(
     async (force) => {
-      const [categories, merchants, promotions] = await Promise.all([
+      const [categories, merchants, promotions, tickerPromotions] = await Promise.all([
         fetchCategories({ force }),
         fetchMerchants({}, { force }),
-        fetchPromotions({ placement: 'Home Top' }).catch(() => []),
+        fetchPromotions({ placement: 'Home Top' }).catch((err) => {
+          console.warn('Home Top promotions failed:', err?.message || err);
+          return [];
+        }),
+        fetchPromotions({ placement: 'Moving Text' }).catch(() => []),
       ]);
-      return { categories, merchants, promotions };
+      return { categories, merchants, promotions, tickerPromotions };
     },
     [],
-    { categories: [], merchants: [], promotions: [] }
+    { categories: [], merchants: [], promotions: [], tickerPromotions: [] }
   );
 
   // Sort categories by actual merchant count so popular ones appear first
@@ -97,6 +101,7 @@ export default function HomeScreen() {
     [businesses, userLocation]
   );
   const promotions = data.promotions;
+  const tickerPromotions = data.tickerPromotions;
   const locationLabel =
     locationStatus === 'granted' && userLocation?.label ? userLocation.label : null;
 
@@ -251,7 +256,9 @@ export default function HomeScreen() {
         >
           {/* ── Ad banner at top: ticker + full-width carousel ── */}
           <AdBannerSlider
-            promotions={loading ? [] : promotions}
+            loading={loading}
+            promotions={promotions}
+            tickerItems={tickerPromotions}
             onPress={(item) => item.merchantId && router.push(`/business/${item.merchantId}`)}
           />
 

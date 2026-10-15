@@ -72,6 +72,14 @@ export function HorizontalCardShimmer() {
   );
 }
 
+export function BannerShimmer({ height }) {
+  return (
+    <View style={[styles.bannerShimmer, { height }]}>
+      <ShimmerBlock width="100%" height="100%" style={{ borderRadius: 0 }} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   cardShimmer: {
     backgroundColor: Colors.surface,
@@ -88,5 +96,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: Spacing.sm,
+  },
+  bannerShimmer: {
+    width: '100%',
+    backgroundColor: '#111',
+    overflow: 'hidden',
   },
 });

@@ -119,6 +119,7 @@ export function normalizeCategory(c, idx = 0) {
 }
 
 export function normalizePromotion(p) {
+  const rawVideo = p.video_url || '';
   return {
     id: String(p.id),
     title: p.title || '',
@@ -126,10 +127,22 @@ export function normalizePromotion(p) {
     category: p.category || '',
     placement: p.placement || '',
     image: formatMediaUrl(p.image_url || p.thumbnail_url || ''),
-    videoUrl: p.video_url || '',
+    videoUrl: rawVideo ? formatMediaUrl(rawVideo) : '',
     targetUrl: p.target_url || '#',
     merchantId: p.merchant_id ? String(p.merchant_id) : null,
   };
+}
+
+function matchesPlacement(promo, placement) {
+  if (!placement) return true;
+  const value = String(promo.placement || '').toLowerCase().trim();
+  const target = String(placement).toLowerCase().trim();
+  return value === target || value.startsWith(target);
+}
+
+export function isMovingTextPlacement(placement) {
+  const value = String(placement || '').toLowerCase();
+  return value.includes('moving') || value.includes('ticker');
 }
 
 // ---------- In-memory cache ----------
@@ -180,11 +193,17 @@ export async function fetchCategories({ force = false } = {}) {
 export async function fetchPromotions(params = {}) {
   const { placement, ...queryParams } = params;
   const json = await request(`/promotions${buildQuery({ status: 'active', ...queryParams })}`);
-  let list = extractList(json, 'promotions')
-    .map(normalizePromotion)
-    .filter((p) => p.image || p.videoUrl);
-  if (placement) {
-    list = list.filter((p) => p.placement === placement);
+  let list = extractList(json, 'promotions').map(normalizePromotion);
+  const movingText = placement && isMovingTextPlacement(placement);
+
+  if (movingText) {
+    list = list.filter((p) => isMovingTextPlacement(p.placement));
+  } else {
+    if (placement) {
+      list = list.filter((p) => matchesPlacement(p, placement));
+    }
+    list = list.filter((p) => p.image || p.videoUrl);
+    list.sort((a, b) => Number(b.id) - Number(a.id));
   }
   return list;
 }
