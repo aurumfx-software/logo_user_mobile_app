@@ -1,43 +1,49 @@
 // Home Screen - Discover nearby businesses
-import React, { useRef, useEffect, useMemo } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  FlatList,
-  TouchableOpacity,
-  Animated,
-  RefreshControl,
-  Image,
-  Dimensions,
+    Animated,
+    Dimensions,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import {
-  fetchCategories,
-  fetchMerchants,
-  fetchPromotions,
-} from '../../services/api';
-import useApi from '../../hooks/useApi';
-import useUserLocation from '../../hooks/useUserLocation';
-import { derivePlacesNearUser, pickNearbyBusinesses } from '../../utils/geo';
-import { CardShimmer } from '../../components/ShimmerLoader';
+import AdBannerSlider from '../../components/AdBannerSlider';
 import BusinessCard from '../../components/BusinessCard';
 import CategoryIcon from '../../components/CategoryIcon';
+import FeaturedOffersSection from '../../components/FeaturedOffersSection';
+import KeralaDiscoveryFooter from '../../components/KeralaDiscoveryFooter';
+import NewsUpdatesSection from '../../components/NewsUpdatesSection';
 import SearchBar from '../../components/SearchBar';
-import PlaceCard from '../../components/PlaceCard';
-import AdBannerSlider from '../../components/AdBannerSlider';
+import { CardShimmer } from '../../components/ShimmerLoader';
+import { BorderRadius, Colors, FontSize, Shadow, Spacing } from '../../constants/theme';
+import useApi from '../../hooks/useApi';
+import useUserLocation from '../../hooks/useUserLocation';
+import { useAuth } from '../../context/AuthContext';
+import {
+    fetchCategories,
+    fetchMerchants,
+    fetchPromotions,
+} from '../../services/api';
+import { pickNearbyBusinesses } from '../../utils/geo';
 
 const { width } = Dimensions.get('window');
 const CATEGORY_COLUMNS = 5;
 const MAX_HOME_CATEGORIES = CATEGORY_COLUMNS * 3;
 
+function nameInitial(name, email) {
+  const n = (name || email || 'G').trim();
+  return n.charAt(0).toUpperCase();
+}
+
 export default function HomeScreen() {
   const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
   const { location: userLocation, status: locationStatus } = useUserLocation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -59,7 +65,15 @@ export default function HomeScreen() {
 
   const { data, loading, error, refreshing, refresh, reload } = useApi(
     async (force) => {
-      const [categories, merchants, promotions, tickerPromotions] = await Promise.all([
+      const [
+        categories,
+        merchants,
+        promotions,
+        tickerPromotions,
+        featuredOffers,
+        specialOffers,
+        footerPromotions,
+      ] = await Promise.all([
         fetchCategories({ force }),
         fetchMerchants({}, { force }),
         fetchPromotions({ placement: 'Home Top' }).catch((err) => {
@@ -67,11 +81,34 @@ export default function HomeScreen() {
           return [];
         }),
         fetchPromotions({ placement: 'Moving Text' }).catch(() => []),
+        fetchPromotions({ placement: 'Featured Offers' }).catch(() => []),
+        fetchPromotions({ placement: 'Special Offer' }).catch(() => []),
+        fetchPromotions({ placement: 'Above Footer' }).catch(() => []),
       ]);
-      return { categories, merchants, promotions, tickerPromotions };
+      const seenOfferIds = new Set();
+      const featuredOfferPromotions = [...featuredOffers, ...specialOffers].filter((p) => {
+        if (seenOfferIds.has(p.id)) return false;
+        seenOfferIds.add(p.id);
+        return true;
+      });
+      return {
+        categories,
+        merchants,
+        promotions,
+        tickerPromotions,
+        featuredOfferPromotions,
+        footerPromotions,
+      };
     },
     [],
-    { categories: [], merchants: [], promotions: [], tickerPromotions: [] }
+    {
+      categories: [],
+      merchants: [],
+      promotions: [],
+      tickerPromotions: [],
+      featuredOfferPromotions: [],
+      footerPromotions: [],
+    }
   );
 
   // Sort categories by actual merchant count so popular ones appear first
@@ -96,12 +133,10 @@ export default function HomeScreen() {
     [businesses, userLocation]
   );
   const featuredBusinesses = businesses.filter((b) => b.isFeatured);
-  const places = useMemo(
-    () => derivePlacesNearUser(businesses, userLocation, 12),
-    [businesses, userLocation]
-  );
   const promotions = data.promotions;
   const tickerPromotions = data.tickerPromotions;
+  const featuredOfferPromotions = data.featuredOfferPromotions;
+  const footerPromotions = data.footerPromotions;
   const locationLabel =
     locationStatus === 'granted' && userLocation?.label ? userLocation.label : null;
 
@@ -110,7 +145,9 @@ export default function HomeScreen() {
   const renderHeader = () => (
     <View style={styles.header}>
       <View>
-        <Text style={styles.greeting}>Hello! 👋</Text>
+        <Text style={styles.greeting}>
+          {isAuthenticated && user?.name ? `Hello, ${user.name.split(' ')[0]}! 👋` : 'Hello! 👋'}
+        </Text>
         <Text style={styles.subtitle}>
           {locationLabel ? `Showing places near ${locationLabel}` : 'What do you need today?'}
         </Text>
@@ -120,9 +157,13 @@ export default function HomeScreen() {
           <Ionicons name="notifications-outline" size={22} color={Colors.text} />
           <View style={styles.notifDot} />
         </TouchableOpacity>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>A</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.avatar}
+          onPress={() => router.push(isAuthenticated ? '/(tabs)/profile' : '/sign-in')}
+          accessibilityLabel={isAuthenticated ? 'Open profile' : 'Sign in'}
+        >
+          <Text style={styles.avatarText}>{nameInitial(user?.name, user?.email)}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -168,14 +209,9 @@ export default function HomeScreen() {
           <Text style={styles.viewAll}>View All</Text>
         </TouchableOpacity>
       </View>
-      <FlatList
-        data={nearbyBusinesses}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <BusinessCard business={item} />}
-        contentContainerStyle={styles.horizontalList}
-      />
+      {nearbyBusinesses.map((business) => (
+        <BusinessCard key={business.id} business={business} variant="vertical" />
+      ))}
     </View>
   );
 
@@ -190,41 +226,6 @@ export default function HomeScreen() {
       {featuredBusinesses.slice(0, 4).map((business) => (
         <BusinessCard key={business.id} business={business} variant="vertical" />
       ))}
-    </View>
-  );
-
-  const renderPlaces = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Ionicons name="location" size={20} color={Colors.primary} style={{ marginRight: 6 }} />
-          <Text style={styles.sectionTitle}>
-            {locationLabel ? 'Nearby Places' : 'Places'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => router.push('/places')}>
-          <Text style={styles.viewAll}>View All ({places.length})</Text>
-        </TouchableOpacity>
-      </View>
-      <FlatList
-        data={places}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <PlaceCard
-            place={item}
-            variant="horizontal"
-            onPress={() =>
-              router.push({
-                pathname: '/(tabs)/search',
-                params: { location: item.name },
-              })
-            }
-          />
-        )}
-        contentContainerStyle={styles.horizontalList}
-      />
     </View>
   );
 
@@ -286,9 +287,27 @@ export default function HomeScreen() {
             <>
               {renderCategories()}
               {renderQuickActions()}
-              {renderPlaces()}
               {renderNearby()}
+              <FeaturedOffersSection
+                offers={featuredOfferPromotions}
+                onPressOffer={(item) => {
+                  if (item.merchantId) {
+                    router.push(`/business/${item.merchantId}`);
+                  }
+                }}
+              />
               {renderFeatured()}
+              <NewsUpdatesSection />
+              <KeralaDiscoveryFooter
+                promotions={footerPromotions}
+                onPressPromo={(item) => {
+                  if (item.merchantId) {
+                    router.push(`/business/${item.merchantId}`);
+                  } else {
+                    router.push('/(tabs)/search');
+                  }
+                }}
+              />
             </>
           )}
 
@@ -523,12 +542,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 14,
-  },
-
-  // Horizontal List
-  horizontalList: {
-    paddingLeft: 0,
-    paddingRight: Spacing.xl,
   },
 
   // Footer

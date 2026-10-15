@@ -6,19 +6,16 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
-import { fetchMerchants, fetchCategories } from '../../services/api';
+import { Colors, Spacing, FontSize } from '../../constants/theme';
+import { fetchMerchants } from '../../services/api';
 import useApi from '../../hooks/useApi';
 import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator } from 'react-native';
 import BusinessCard from '../../components/BusinessCard';
 import SearchBar from '../../components/SearchBar';
-
-const recentSearches = ['Restaurants', 'Pharmacy', 'Advocates', 'Physiotherapy'];
 
 const matches = (b, q) => {
   const s = q.toLowerCase();
@@ -35,50 +32,40 @@ const matches = (b, q) => {
 export default function SearchScreen() {
   const { location } = useLocalSearchParams();
   const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(null);
 
   const { data, loading } = useApi(
     async () => {
-      const [businesses, categories] = await Promise.all([fetchMerchants(), fetchCategories()]);
-      return { businesses, categories };
+      const businesses = await fetchMerchants();
+      return { businesses };
     },
     [],
-    { businesses: [], categories: [] }
+    { businesses: [] }
   );
   const { businesses } = data;
-  // Only show category chips that actually have merchants
-  const categories = useMemo(() => {
-    const used = new Set(businesses.map((b) => b.category));
-    return data.categories.filter((c) => used.has(c.id));
-  }, [data, businesses]);
 
   const results = useMemo(() => {
     let list = businesses;
     if (location) list = list.filter((b) => b.city.toLowerCase() === String(location).toLowerCase());
-    if (selectedCategory) list = list.filter((b) => b.category === selectedCategory);
     if (query) list = list.filter((b) => matches(b, query));
     return list;
-  }, [businesses, location, selectedCategory, query]);
+  }, [businesses, location, query]);
 
   const handleSearch = useCallback((text) => setQuery(text), []);
 
-  const handleCategoryFilter = (catId) => {
-    setSelectedCategory((prev) => (prev === catId ? null : catId));
-  };
-
-  const renderEmptySearch = () => loading ? (
-    <View style={styles.emptyContainer}>
-      <ActivityIndicator size="large" color={Colors.primary} />
-    </View>
-  ) : (
-    <View style={styles.emptyContainer}>
-      <View style={styles.emptyIconBg}>
-        <Ionicons name="search-outline" size={48} color={Colors.primary} />
+  const renderEmptySearch = () =>
+    loading ? (
+      <View style={styles.emptyContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
-      <Text style={styles.emptyTitle}>No results found</Text>
-      <Text style={styles.emptySubtitle}>Try a different search term or category</Text>
-    </View>
-  );
+    ) : (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconBg}>
+          <Ionicons name="search-outline" size={48} color={Colors.primary} />
+        </View>
+        <Text style={styles.emptyTitle}>No results found</Text>
+        <Text style={styles.emptySubtitle}>Try a different search term</Text>
+      </View>
+    );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -94,58 +81,6 @@ export default function SearchScreen() {
         />
       </View>
 
-      {/* Recent Searches */}
-      {!query && !selectedCategory && (
-        <View style={styles.recentSection}>
-          <Text style={styles.recentTitle}>Recent Searches</Text>
-          <View style={styles.recentChips}>
-            {recentSearches.map((item, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.recentChip}
-                onPress={() => handleSearch(item)}
-              >
-                <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
-                <Text style={styles.recentChipText}>{item}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Category Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryFilters}
-      >
-        {categories.filter(c => c.slug !== 'more').map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[
-              styles.filterChip,
-              selectedCategory === cat.id && { backgroundColor: Colors.primary },
-            ]}
-            onPress={() => handleCategoryFilter(cat.id)}
-          >
-            <Ionicons
-              name={cat.icon}
-              size={16}
-              color={selectedCategory === cat.id ? '#FFF' : cat.color}
-            />
-            <Text
-              style={[
-                styles.filterChipText,
-                selectedCategory === cat.id && { color: '#FFF' },
-              ]}
-            >
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Results count */}
       <View style={styles.resultsHeader}>
         <Text style={styles.resultsCount}>{results.length} results found</Text>
         <TouchableOpacity style={styles.sortButton}>
@@ -154,7 +89,6 @@ export default function SearchScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Results */}
       <FlatList
         data={results}
         keyExtractor={(item) => item.id}
@@ -186,62 +120,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.md,
   },
-
-  // Recent Searches
-  recentSection: {
-    paddingHorizontal: Spacing.xl,
-    marginBottom: Spacing.md,
-  },
-  recentTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-  },
-  recentChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  recentChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    ...Shadow.small,
-  },
-  recentChipText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-
-  // Category Filters
-  categoryFilters: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  filterChipText: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-
-  // Results
   resultsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -268,8 +146,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.xl,
   },
-
-  // Empty state
   emptyContainer: {
     alignItems: 'center',
     paddingTop: 60,

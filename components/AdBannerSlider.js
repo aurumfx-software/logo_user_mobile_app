@@ -1,20 +1,22 @@
 // AdBannerSlider — scrolling ticker + full-width auto-slide image/video carousel
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Dimensions,
-  Animated,
-  FlatList,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  InteractionManager,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { BannerShimmer } from './ShimmerLoader';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -129,139 +131,136 @@ function TickerBar({ items }) {
   );
 }
 
-function VideoAdSlide({ item, isActive, onVideoEnd, onPlaybackChange }) {
-  const player = useVideoPlayer(item.videoUrl, (p) => {
+const VIDEO_PLAY_RETRY_MS = 280;
+const VIDEO_PLAY_MAX_ATTEMPTS = 40;
+
+/** Full-bleed overlay on top of carousel — avoids FlatList clipping/recycle issues. */
+function TopCarouselVideo({ videoUrl, onVideoEnd, onPlaybackChange }) {
+  const player = useVideoPlayer(videoUrl, (p) => {
     p.loop = false;
     p.muted = true;
   });
   const endedRef = useRef(false);
-  const viewMountedRef = useRef(false);
+  const playingRef = useRef(false);
+
+  const forcePlay = useCallback(() => {
+    if (!videoUrl) return;
+    try {
+      if (player.status === 'readyToPlay' || player.status === 'idle') {
+        player.play();
+      } else {
+        player.play();
+      }
+    } catch {
+      // retry on next tick
+    }
+  }, [player, videoUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      endedRef.current = false;
+      const t = setTimeout(forcePlay, 100);
+      return () => clearTimeout(t);
+    }, [forcePlay, videoUrl])
+  );
 
   useEffect(() => {
-    if (!isActive) {
-      player.pause();
-      onPlaybackChange?.(false);
-      return;
-    }
-
     endedRef.current = false;
+    playingRef.current = false;
     onPlaybackChange?.(false);
 
-    const playWhenReady = () => {
-      if (!isActive || !viewMountedRef.current) return;
-      try {
-        if (player.status === 'readyToPlay') {
-          player.currentTime = 0;
-          player.play();
-        }
-      } catch {
-        // Native player not attached yet.
-      }
-    };
-
     const statusSub = player.addListener('statusChange', ({ status }) => {
-      if (!isActive) return;
-      if (status === 'readyToPlay') {
-        playWhenReady();
+      if (status === 'readyToPlay' || status === 'loading') {
+        forcePlay();
       }
       if (status === 'error') {
         onPlaybackChange?.(false);
+        setTimeout(onVideoEnd, 800);
       }
     });
-    const loadSub = player.addListener('sourceLoad', () => {
-      if (isActive) playWhenReady();
-    });
+    const loadSub = player.addListener('sourceLoad', forcePlay);
     const playingSub = player.addListener('playingChange', ({ isPlaying }) => {
-      if (isActive) onPlaybackChange?.(isPlaying);
+      playingRef.current = isPlaying;
+      onPlaybackChange?.(isPlaying);
     });
     const endSub = player.addListener('playToEnd', () => {
-      if (!isActive || endedRef.current) return;
+      if (endedRef.current) return;
       endedRef.current = true;
       onVideoEnd?.();
     });
 
-    const retryTimer = setTimeout(playWhenReady, 200);
-    const retryTimer2 = setTimeout(playWhenReady, 800);
+    const interactionTask = InteractionManager.runAfterInteractions(forcePlay);
+    const timers = [0, 120, 350, 700, 1200, 2000].map((ms) => setTimeout(forcePlay, ms));
+
+    let attempts = 0;
+    const retryId = setInterval(() => {
+      attempts += 1;
+      if (playingRef.current || attempts >= VIDEO_PLAY_MAX_ATTEMPTS) {
+        clearInterval(retryId);
+        return;
+      }
+      forcePlay();
+    }, VIDEO_PLAY_RETRY_MS);
 
     return () => {
-      clearTimeout(retryTimer);
-      clearTimeout(retryTimer2);
+      interactionTask.cancel?.();
+      timers.forEach(clearTimeout);
+      clearInterval(retryId);
+      try {
+        player.pause();
+      } catch {
+        // ignore
+      }
       statusSub.remove();
       loadSub.remove();
       playingSub.remove();
       endSub.remove();
     };
-  }, [player, item.videoUrl, isActive, onVideoEnd, onPlaybackChange]);
+  }, [player, videoUrl, onVideoEnd, onPlaybackChange, forcePlay]);
 
   return (
     <VideoView
-      style={[
-        styles.slideMediaVideo,
-        !isActive && styles.slideMediaVideoHidden,
-      ]}
+      style={styles.topVideoView}
       player={player}
       contentFit="cover"
       nativeControls={false}
       allowsFullscreen={false}
       allowsPictureInPicture={false}
       surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
-      onLayout={() => {
-        viewMountedRef.current = true;
-        if (isActive && player.status === 'readyToPlay') {
-          try {
-            player.play();
-          } catch {
-            // ignore
-          }
-        }
-      }}
+      collapsable={false}
+      onLayout={forcePlay}
     />
   );
 }
 
-// ─── Single slide (image + optional video when active) ─────────────────────────
-function AdSlide({ item, isActive, onVideoEnd }) {
+// Poster-only slide; video renders in TopCarouselVideo overlay.
+function AdSlide({ item, hidePoster }) {
   const [imageReady, setImageReady] = useState(false);
-  const [videoPlaying, setVideoPlaying] = useState(false);
   const uri = item?.image;
-  const hasVideo = !!item?.videoUrl;
+  const hasVideo = !!String(item?.videoUrl || '').trim();
 
   useEffect(() => {
     setImageReady(false);
-    setVideoPlaying(false);
     if (uri) Image.prefetch(uri).catch(() => {});
   }, [uri, item?.videoUrl]);
-
-  const showVideoBuffering = hasVideo && isActive && !videoPlaying;
 
   return (
     <View style={styles.slide}>
       {uri ? (
         <Image
           source={{ uri }}
-          style={[
-            styles.slideMedia,
-            hasVideo && isActive && videoPlaying && styles.slideMediaHidden,
-          ]}
+          style={[styles.slideMedia, hidePoster && styles.slideMediaHidden]}
           resizeMode="cover"
           onLoadEnd={() => setImageReady(true)}
           onError={() => setImageReady(true)}
         />
       ) : (
-        <View style={styles.slideMedia} />
+        <View style={[styles.slideMedia, hasVideo && styles.slideMediaPoster]} />
       )}
-      {uri && !imageReady && !(hasVideo && isActive) && (
+      {uri && !imageReady && !hidePoster && (
         <View style={styles.mediaLoading}>
           <ActivityIndicator color="#fff" size="small" />
         </View>
-      )}
-      {hasVideo && (
-        <VideoAdSlide
-          item={item}
-          isActive={isActive}
-          onVideoEnd={onVideoEnd}
-          onPlaybackChange={setVideoPlaying}
-        />
       )}
       {hasVideo && (
         <View style={styles.videoBadge}>
@@ -269,25 +268,11 @@ function AdSlide({ item, isActive, onVideoEnd }) {
           <Text style={styles.videoBadgeText}>VIDEO</Text>
         </View>
       )}
-      {showVideoBuffering && (
-        <View style={styles.mediaLoading} pointerEvents="none">
-          <ActivityIndicator color="#fff" size="small" />
-        </View>
-      )}
-
       <LinearGradient
         colors={['transparent', 'rgba(0,0,0,0.62)']}
         style={styles.slideGradient}
         pointerEvents="none"
       />
-
-      {!!(item.title) && (
-        <View style={styles.slideCaption}>
-          <Text style={styles.slideCaptionText} numberOfLines={2}>
-            {item.title}
-          </Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -300,13 +285,25 @@ export default function AdBannerSlider({
   loading = false,
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [videoPlaying, setVideoPlaying] = useState(false);
   const flatListRef = useRef(null);
   const timerRef = useRef(null);
 
-  const slides = useMemo(
-    () => promotions.filter((p) => String(p.image || '').trim() || String(p.videoUrl || '').trim()),
-    [promotions]
-  );
+  const slides = useMemo(() => {
+    const list = promotions.filter(
+      (p) => String(p.image || '').trim() || String(p.videoUrl || '').trim()
+    );
+    return [...list].sort((a, b) => {
+      const aVideo = String(a.videoUrl || '').trim();
+      const bVideo = String(b.videoUrl || '').trim();
+      if (aVideo && !bVideo) return -1;
+      if (!aVideo && bVideo) return 1;
+      return Number(b.id) - Number(a.id);
+    });
+  }, [promotions]);
+
+  const activeSlide = slides[activeIndex];
+  const activeVideoUrl = String(activeSlide?.videoUrl || '').trim();
   const slidesKey = slides.map((s) => s.id).join('|');
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 85 }).current;
@@ -332,6 +329,10 @@ export default function AdBannerSlider({
       Image.prefetch(uri).catch(() => {});
     }
   }, [slidesKey, slides]);
+
+  useEffect(() => {
+    setVideoPlaying(false);
+  }, [activeIndex, activeVideoUrl]);
 
   const scrollToSlide = useCallback(
     (index, animated = true) => {
@@ -365,7 +366,7 @@ export default function AdBannerSlider({
   useEffect(() => {
     if (slides.length <= 1) return;
     const current = slides[activeIndex];
-    if (current?.videoUrl) return;
+    if (String(current?.videoUrl || '').trim()) return;
     timerRef.current = setTimeout(() => {
       advanceSlide();
     }, AUTO_PLAY_MS);
@@ -416,12 +417,40 @@ export default function AdBannerSlider({
             >
               <AdSlide
                 item={item}
-                isActive={index === activeIndex}
-                onVideoEnd={onVideoEnd}
+                hidePoster={index === activeIndex && videoPlaying && !!activeVideoUrl}
               />
             </TouchableOpacity>
           )}
         />
+
+        {activeVideoUrl ? (
+          <View style={styles.topVideoLayer} pointerEvents="none">
+            <TopCarouselVideo
+              key={`top-video-${activeIndex}-${activeVideoUrl}`}
+              videoUrl={activeVideoUrl}
+              onVideoEnd={onVideoEnd}
+              onPlaybackChange={setVideoPlaying}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.62)']}
+              style={styles.slideGradient}
+              pointerEvents="none"
+            />
+            {!videoPlaying && (
+              <View style={styles.topVideoBuffering} pointerEvents="none">
+                <ActivityIndicator color="#fff" size="small" />
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {!!activeSlide?.title && (
+          <View style={styles.slideCaptionOverlay} pointerEvents="none">
+            <Text style={styles.slideCaptionText} numberOfLines={2}>
+              {activeSlide.title}
+            </Text>
+          </View>
+        )}
 
         {/* Left arrow */}
         {slides.length > 1 && (
@@ -555,6 +584,31 @@ const styles = StyleSheet.create({
     height: SLIDE_HEIGHT,
     overflow: 'hidden',
     backgroundColor: '#111',
+    position: 'relative',
+  },
+  topVideoLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    backgroundColor: '#000',
+  },
+  topVideoView: {
+    width: SCREEN_WIDTH,
+    height: SLIDE_HEIGHT,
+    backgroundColor: '#000',
+  },
+  topVideoBuffering: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    zIndex: 2,
+  },
+  slideCaptionOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 60,
+    bottom: 30,
+    zIndex: 25,
   },
   slide: {
     width: SCREEN_WIDTH,
@@ -565,13 +619,8 @@ const styles = StyleSheet.create({
     height: SLIDE_HEIGHT,
     backgroundColor: '#222',
   },
-  slideMediaVideo: {
-    ...StyleSheet.absoluteFillObject,
+  slideMediaPoster: {
     backgroundColor: '#111',
-    zIndex: 1,
-  },
-  slideMediaVideoHidden: {
-    opacity: 0,
   },
   slideMediaHidden: {
     opacity: 0,
@@ -587,7 +636,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 4,
     gap: 4,
-    zIndex: 2,
+    zIndex: 10,
   },
   videoBadgeText: {
     color: '#fff',
@@ -600,6 +649,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.25)',
+    zIndex: 6,
   },
   sliderEmpty: {
     backgroundColor: '#111',
@@ -607,12 +657,14 @@ const styles = StyleSheet.create({
   slideGradient: {
     ...StyleSheet.absoluteFillObject,
     top: '40%',
+    zIndex: 8,
   },
   slideCaption: {
     position: 'absolute',
     left: 16,
     right: 60,
     bottom: 30,
+    zIndex: 9,
   },
   slideCaptionText: {
     color: '#fff',
@@ -636,6 +688,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.35)',
+    zIndex: 30,
   },
   arrowLeft: { left: 10 },
   arrowRight: { right: 10 },
@@ -649,6 +702,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 6,
+    zIndex: 30,
   },
   dot: {
     height: 8,
