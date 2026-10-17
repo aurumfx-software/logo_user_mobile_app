@@ -252,6 +252,7 @@ export default function ProfileScreen() {
         visible={Boolean(openPolicy)}
         policyKey={openPolicy || 'privacy'}
         onClose={() => setOpenPolicy(null)}
+        onOpenPolicy={(nextKey) => setOpenPolicy(nextKey)}
       />
     </SafeAreaView>
   );

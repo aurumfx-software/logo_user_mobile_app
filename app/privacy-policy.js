@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View } from 'react-native';
 import PolicySheet from '../components/PolicySheet';
 import { Colors } from '../constants/theme';
 
@@ -8,8 +8,12 @@ export default function PrivacyPolicyScreen() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.surface }} edges={['top', 'bottom']}>
-      <PolicySheet policyKey="privacy" onClose={() => router.back()} />
-    </SafeAreaView>
+    <View style={{ flex: 1, backgroundColor: Colors.surface }}>
+      <PolicySheet
+        policyKey="privacy"
+        onClose={() => router.back()}
+        onOpenPolicy={(nextKey) => router.push(`/policy/${nextKey}`)}
+      />
+    </View>
   );
 }
