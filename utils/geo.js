@@ -110,7 +110,20 @@ export function derivePlacesNearUser(merchants = [], userCoords, limit = 12) {
   return places.slice(0, limit);
 }
 
-export function pickNearbyBusinesses(merchants, userCoords, limit = 10) {
+/** Match merchants by town, district, or address (case-insensitive). */
+export function filterMerchantsByArea(merchants, areaName) {
+  if (!areaName || String(areaName).toLowerCase() === 'kerala') return merchants;
+  const q = String(areaName).toLowerCase().trim();
+  return merchants.filter((m) => {
+    const hay = [m.city, m.district, m.address, m.distance, m.landmark]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function pickNearbyFromPool(merchants, userCoords, limit) {
   const sorted = sortByDistance(withDistanceFromUser(merchants, userCoords));
   const withCoords = sorted.filter((b) => b.distanceKm != null);
   if (withCoords.length > 0) {
@@ -123,4 +136,52 @@ export function pickNearbyBusinesses(merchants, userCoords, limit = 10) {
       .slice(0, limit);
   }
   return merchants.slice(0, limit);
+}
+
+/**
+ * Nearby merchants for home — prefers area pool, then backfills to `min` from `fallbackMerchants`.
+ * @param {number|{ limit?: number, min?: number, fallbackMerchants?: array }} limitOrOptions
+ */
+export function pickNearbyBusinesses(merchants, userCoords, limitOrOptions = 10) {
+  const opts =
+    typeof limitOrOptions === 'number'
+      ? { limit: limitOrOptions, min: 4, fallbackMerchants: null }
+      : {
+          limit: limitOrOptions.limit ?? 10,
+          min: limitOrOptions.min ?? 4,
+          fallbackMerchants: limitOrOptions.fallbackMerchants ?? null,
+        };
+  const { limit, min, fallbackMerchants } = opts;
+
+  let result = pickNearbyFromPool(merchants, userCoords, limit);
+  const seen = new Set(result.map((b) => b.id));
+
+  const appendFrom = (pool) => {
+    if (!pool?.length || result.length >= min) return;
+    const remaining = pool.filter((b) => !seen.has(b.id));
+    if (!remaining.length) return;
+    const need = Math.min(limit - result.length, min - result.length);
+    const extra = pickNearbyFromPool(remaining, userCoords, need);
+    extra.forEach((b) => {
+      seen.add(b.id);
+      result.push(b);
+    });
+    if (result.length < min) {
+      for (const b of remaining) {
+        if (seen.has(b.id)) continue;
+        seen.add(b.id);
+        result.push(b);
+        if (result.length >= min || result.length >= limit) break;
+      }
+    }
+  };
+
+  if (result.length < min && fallbackMerchants && fallbackMerchants !== merchants) {
+    appendFrom(fallbackMerchants);
+  }
+  if (result.length < min) {
+    appendFrom(merchants);
+  }
+
+  return result.slice(0, limit);
 }

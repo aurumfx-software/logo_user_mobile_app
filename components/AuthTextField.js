@@ -5,22 +5,34 @@ import { Colors, BorderRadius, FontSize, Spacing } from '../constants/theme';
 
 export default function AuthTextField({
   label,
+  hint,
   value,
   onChangeText,
   placeholder,
   keyboardType,
   autoCapitalize = 'none',
   secureTextEntry,
+  multiline,
   error,
+  maxLength,
+  editable = true,
 }) {
   const [hidden, setHidden] = useState(!!secureTextEntry);
 
   return (
     <View style={styles.wrap}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.inputRow, error && styles.inputRowError]}>
+      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      <View
+        style={[
+          styles.inputRow,
+          multiline && styles.inputRowMultiline,
+          error && styles.inputRowError,
+          !editable && styles.inputRowDisabled,
+        ]}
+      >
         <TextInput
-          style={styles.input}
+          style={[styles.input, multiline && styles.inputMultiline]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -29,6 +41,10 @@ export default function AuthTextField({
           autoCapitalize={autoCapitalize}
           secureTextEntry={hidden}
           autoCorrect={false}
+          multiline={multiline}
+          textAlignVertical={multiline ? 'top' : 'center'}
+          maxLength={maxLength}
+          editable={editable}
         />
         {secureTextEntry ? (
           <TouchableOpacity
@@ -55,6 +71,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: Spacing.xs,
   },
+  hint: {
+    fontSize: FontSize.xs,
+    color: Colors.textLight,
+    marginBottom: Spacing.xs,
+    lineHeight: 16,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -65,8 +87,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     minHeight: 52,
   },
+  inputRowMultiline: {
+    alignItems: 'flex-start',
+    paddingVertical: Spacing.md,
+    minHeight: 96,
+  },
+  inputMultiline: {
+    minHeight: 72,
+  },
   inputRowError: {
     borderColor: Colors.secondary,
+  },
+  inputRowDisabled: {
+    backgroundColor: Colors.background,
   },
   input: {
     flex: 1,

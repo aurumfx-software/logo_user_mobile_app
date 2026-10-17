@@ -19,18 +19,19 @@ import CategoryIcon from '../../components/CategoryIcon';
 import FeaturedOffersSection from '../../components/FeaturedOffersSection';
 import KeralaDiscoveryFooter from '../../components/KeralaDiscoveryFooter';
 import NewsUpdatesSection from '../../components/NewsUpdatesSection';
+import LocationChip from '../../components/LocationChip';
 import SearchBar from '../../components/SearchBar';
 import { CardShimmer } from '../../components/ShimmerLoader';
 import { BorderRadius, Colors, FontSize, Shadow, Spacing } from '../../constants/theme';
 import useApi from '../../hooks/useApi';
-import useUserLocation from '../../hooks/useUserLocation';
 import { useAuth } from '../../context/AuthContext';
+import { useAppLocation } from '../../context/AppLocationContext';
 import {
     fetchCategories,
     fetchMerchants,
     fetchPromotions,
 } from '../../services/api';
-import { pickNearbyBusinesses } from '../../utils/geo';
+import { filterMerchantsByArea, pickNearbyBusinesses } from '../../utils/geo';
 
 const { width } = Dimensions.get('window');
 const CATEGORY_COLUMNS = 5;
@@ -44,7 +45,7 @@ function nameInitial(name, email) {
 export default function HomeScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { location: userLocation, status: locationStatus } = useUserLocation();
+  const { selection, displayLabel, coordsForDistance } = useAppLocation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -128,17 +129,26 @@ export default function HomeScreen() {
   }
   const categories = sortedCategories.slice(0, homeCategoryCount);
   const businesses = data.merchants;
+  const areaFilteredMerchants = useMemo(() => {
+    if (!selection || selection.type === 'state') return businesses;
+    const key = selection.type === 'district' ? selection.district || selection.name : selection.name;
+    return filterMerchantsByArea(businesses, key);
+  }, [businesses, selection]);
   const nearbyBusinesses = useMemo(
-    () => pickNearbyBusinesses(businesses, userLocation, 10),
-    [businesses, userLocation]
+    () =>
+      pickNearbyBusinesses(areaFilteredMerchants, coordsForDistance, {
+        limit: 10,
+        min: 4,
+        fallbackMerchants: businesses,
+      }),
+    [areaFilteredMerchants, coordsForDistance, businesses]
   );
   const featuredBusinesses = businesses.filter((b) => b.isFeatured);
   const promotions = data.promotions;
   const tickerPromotions = data.tickerPromotions;
   const featuredOfferPromotions = data.featuredOfferPromotions;
   const footerPromotions = data.footerPromotions;
-  const locationLabel =
-    locationStatus === 'granted' && userLocation?.label ? userLocation.label : null;
+  const locationLabel = selection?.type !== 'state' ? displayLabel : null;
 
   const onRefresh = () => refresh();
 
@@ -149,7 +159,7 @@ export default function HomeScreen() {
           {isAuthenticated && user?.name ? `Hello, ${user.name.split(' ')[0]}! 👋` : 'Hello! 👋'}
         </Text>
         <Text style={styles.subtitle}>
-          {locationLabel ? `Showing places near ${locationLabel}` : 'What do you need today?'}
+          {locationLabel ? `Showing places in ${locationLabel}` : 'Browse all of Kerala'}
         </Text>
       </View>
       <View style={styles.headerRight}>
@@ -202,7 +212,10 @@ export default function HomeScreen() {
           onPress={() =>
             router.push({
               pathname: '/(tabs)/search',
-              params: userLocation?.city ? { location: userLocation.city } : undefined,
+              params:
+                selection?.type !== 'state' && selection?.name
+                  ? { location: selection.name }
+                  : undefined,
             })
           }
         >
@@ -264,6 +277,10 @@ export default function HomeScreen() {
           />
 
           {renderHeader()}
+
+          <View style={styles.locationChipWrapper}>
+            <LocationChip />
+          </View>
 
           <View style={styles.searchWrapper}>
             <SearchBar onPress={() => router.push('/(tabs)/search')} />
@@ -428,6 +445,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: FontSize.lg,
     fontWeight: '700',
+  },
+  locationChipWrapper: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xs,
   },
   searchWrapper: {
     paddingHorizontal: Spacing.xl,

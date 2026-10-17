@@ -172,6 +172,17 @@ export async function searchMerchants(query, location) {
   return extractList(json, 'merchants').map(normalizeMerchant);
 }
 
+export async function fetchMerchantLocations() {
+  const json = await request('/merchants/locations');
+  const list = json?.data || extractList(json, 'locations');
+  return list
+    .map((row) => ({
+      name: row.location || row.name || '',
+      count: Number(row.count || 0),
+    }))
+    .filter((r) => r.name);
+}
+
 export async function fetchMerchantById(id) {
   const cleanId = String(id).replace(/^MCH-/, '');
   if (cache.merchantById[cleanId]) return cache.merchantById[cleanId];
@@ -206,6 +217,41 @@ export async function fetchPromotions(params = {}) {
     list.sort((a, b) => Number(b.id) - Number(a.id));
   }
   return list;
+}
+
+// ---------- Policy content (GET /api/v1/content/policies/{key}) ----------
+export async function fetchPolicies() {
+  const json = await request('/content/policies');
+  return extractList(json, 'policies');
+}
+
+export async function fetchPolicy(key) {
+  const json = await request(`/content/policies/${encodeURIComponent(key)}`);
+  const row = json?.data ?? json;
+  if (!row?.content) throw new Error('Policy not found');
+  return normalizePolicyRow(row, key);
+}
+
+/** @deprecated use fetchPolicy */
+export const fetchPublicPolicy = fetchPolicy;
+
+/** @deprecated use fetchPolicies */
+export const fetchPublicPolicies = fetchPolicies;
+
+function normalizePolicyRow(row, key) {
+  return {
+    id: row.id,
+    key: row.key || key,
+    label: row.label || key,
+    content: sanitizePolicyContent(row.content),
+    lastUpdated: row.last_updated || row.lastUpdated || null,
+  };
+}
+
+function sanitizePolicyContent(text) {
+  return String(text || '')
+    .replace(/\s+yes\s*$/i, '')
+    .trim();
 }
 
 // Places are derived from merchant cities (the web app does the same)

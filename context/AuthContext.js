@@ -5,6 +5,8 @@ import {
   getCachedUser,
   login as apiLogin,
   register as apiRegister,
+  updateCustomerLocation,
+  updateCustomerProfile,
 } from '../services/auth';
 
 const AuthContext = createContext(null);
@@ -46,6 +48,24 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const fresh = await fetchCurrentUser();
+    setUser(fresh);
+    return fresh;
+  }, []);
+
+  const updateProfile = useCallback(async (profilePayload, locationPayload) => {
+    let next = user;
+    if (profilePayload && Object.keys(profilePayload).length) {
+      next = await updateCustomerProfile(profilePayload);
+    }
+    if (locationPayload && Object.keys(locationPayload).length) {
+      next = await updateCustomerLocation(locationPayload);
+    }
+    setUser(next);
+    return next;
+  }, [user]);
+
   const value = useMemo(
     () => ({
       user,
@@ -54,8 +74,10 @@ export function AuthProvider({ children }) {
       signIn,
       signUp,
       signOut,
+      refreshUser,
+      updateProfile,
     }),
-    [user, bootstrapping, signIn, signUp, signOut]
+    [user, bootstrapping, signIn, signUp, signOut, refreshUser, updateProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

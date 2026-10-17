@@ -10,7 +10,6 @@ import {
   Dimensions,
   FlatList,
   Image,
-  InteractionManager,
   Platform,
   StyleSheet,
   Text,
@@ -26,6 +25,21 @@ const TICKER_HEIGHT = 38;
 const TICKER_SPEED = 45; // px/s — similar pace to web landing ticker
 const TICKER_BADGE_WIDTH = 44;
 const TICKER_FADE_WIDTH = 28;
+/** Space between end of copy A and start of copy B (included in scroll distance). */
+const TICKER_SEGMENT_GAP = 48;
+
+/** Defer work until the UI is idle (replaces deprecated InteractionManager). */
+function runWhenIdle(callback) {
+  const g = globalThis;
+  if (typeof g.requestIdleCallback === 'function') {
+    const id = g.requestIdleCallback(callback, { timeout: 500 });
+    return () => {
+      if (typeof g.cancelIdleCallback === 'function') g.cancelIdleCallback(id);
+    };
+  }
+  const timer = setTimeout(callback, 0);
+  return () => clearTimeout(timer);
+}
 
 const DEFAULT_TICKER_ITEMS = [
   { id: 't1', title: '⚡ Festive Season Offers — Check Out Exclusive Deals Near You' },
@@ -35,20 +49,24 @@ const DEFAULT_TICKER_ITEMS = [
   { id: 't5', title: '🔥 Mega Deals Festival — Up to 60% Off on Top Brands' },
 ];
 
-// ─── Ticker bar (matches web zeas-ticker-bar / Moving Text promos) ─────────────
+// ─── Ticker bar — single-line marquee (one Text per segment avoids flex overlap) ─
 function TickerBar({ items }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const segmentWidth = useRef(0);
   const loopRef = useRef(null);
 
-  const announcements =
-    items.length > 0
-      ? items
-      : DEFAULT_TICKER_ITEMS;
+  const announcements = items.length > 0 ? items : DEFAULT_TICKER_ITEMS;
+
+  const marqueeText = useMemo(() => {
+    const parts = announcements
+      .map((item) => String(item.title || item.description || '').trim())
+      .filter(Boolean);
+    return parts.join('   •   ');
+  }, [announcements]);
 
   const startLoop = useCallback(
     (width) => {
-      if (!width) return;
+      if (!width || width < 1) return;
       segmentWidth.current = width;
       loopRef.current?.stop();
       translateX.setValue(0);
@@ -73,23 +91,23 @@ function TickerBar({ items }) {
     if (segmentWidth.current) {
       startLoop(segmentWidth.current);
     }
-  }, [announcements, startLoop]);
+  }, [marqueeText, startLoop]);
 
-  const renderRow = (prefix) =>
-    announcements.map((item, index) => {
-      const label = item.title || item.description;
-      if (!label) return null;
-      return (
-        <View key={`${prefix}-${item.id || index}`} style={styles.tickerItem}>
-          <Text style={styles.tickerItemText} numberOfLines={1}>
-            {label}
-          </Text>
-          <Text style={styles.tickerBullet} accessibilityElementsHidden>
-            •
-          </Text>
-        </View>
-      );
-    });
+  if (!marqueeText) {
+    return null;
+  }
+
+  const TickerCopy = ({ onMeasure }) => (
+    <View
+      style={styles.tickerCopy}
+      onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.width) : undefined}
+    >
+      <Text style={styles.tickerLineText} allowFontScaling={false}>
+        {marqueeText}
+      </Text>
+      <View style={styles.tickerCopyGap} />
+    </View>
+  );
 
   return (
     <View style={styles.ticker} accessibilityLabel="Live Announcements">
@@ -116,15 +134,8 @@ function TickerBar({ items }) {
           style={[styles.tickerTrack, { transform: [{ translateX }] }]}
           collapsable={false}
         >
-          <View
-            style={styles.tickerSegment}
-            onLayout={(e) => startLoop(e.nativeEvent.layout.width)}
-          >
-            {renderRow('a')}
-          </View>
-          <View style={styles.tickerSegment} importantForAccessibility="no-hide-descendants">
-            {renderRow('b')}
-          </View>
+          <TickerCopy onMeasure={startLoop} />
+          <TickerCopy />
         </Animated.View>
       </View>
     </View>
@@ -189,7 +200,7 @@ function TopCarouselVideo({ videoUrl, onVideoEnd, onPlaybackChange }) {
       onVideoEnd?.();
     });
 
-    const interactionTask = InteractionManager.runAfterInteractions(forcePlay);
+    const cancelIdle = runWhenIdle(forcePlay);
     const timers = [0, 120, 350, 700, 1200, 2000].map((ms) => setTimeout(forcePlay, ms));
 
     let attempts = 0;
@@ -203,7 +214,7 @@ function TopCarouselVideo({ videoUrl, onVideoEnd, onPlaybackChange }) {
     }, VIDEO_PLAY_RETRY_MS);
 
     return () => {
-      interactionTask.cancel?.();
+      cancelIdle();
       timers.forEach(clearTimeout);
       clearInterval(retryId);
       try {
@@ -547,35 +558,27 @@ const styles = StyleSheet.create({
   tickerTrack: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'nowrap',
+    height: TICKER_HEIGHT,
   },
-  tickerSegment: {
+  tickerCopy: {
     flexDirection: 'row',
-    alignItems: 'center',
     flexShrink: 0,
-  },
-  tickerItem: {
-    flexDirection: 'row',
+    height: TICKER_HEIGHT,
     alignItems: 'center',
-    flexShrink: 0,
-    paddingLeft: 12,
-    paddingRight: 4,
   },
-  tickerItemText: {
+  tickerCopyGap: {
+    width: TICKER_SEGMENT_GAP,
+    height: 1,
+  },
+  tickerLineText: {
     color: '#f8fafc',
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 0.2,
+    lineHeight: Platform.OS === 'android' ? 18 : 17,
+    paddingLeft: 12,
     flexShrink: 0,
-    maxHeight: TICKER_HEIGHT,
-    ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
-  },
-  tickerBullet: {
-    color: '#38bdf8',
-    fontSize: 14,
-    marginLeft: 12,
-    opacity: 0.85,
-    flexShrink: 0,
+    ...(Platform.OS === 'android' ? { includeFontPadding: false, textAlignVertical: 'center' } : null),
   },
 
   // ── slider ──

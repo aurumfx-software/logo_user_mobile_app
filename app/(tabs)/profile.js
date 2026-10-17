@@ -1,5 +1,5 @@
 // Profile Screen - User profile & settings
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../constants/theme';
+import PolicyModal from '../../components/PolicyModal';
 import { useAuth } from '../../context/AuthContext';
 
 const stats = [
@@ -23,33 +24,24 @@ const stats = [
   { label: 'Photos', value: '23', icon: 'camera' },
 ];
 
-const menuItems = [
+const accountMenuItems = [
+  { icon: 'id-card-outline', label: 'Profile Details', color: Colors.primary, href: '/profile-details' },
+  { icon: 'person-outline', label: 'Edit Profile', color: '#5A52D5', href: '/edit-profile' },
+  { icon: 'location-outline', label: 'My Addresses', color: '#FF9800', href: '/profile-address' },
+  { icon: 'notifications-outline', label: 'Notifications', color: '#2196F3' },
   {
-    section: 'Account',
-    items: [
-      { icon: 'person-outline', label: 'Edit Profile', color: Colors.primary },
-      { icon: 'location-outline', label: 'My Addresses', color: '#FF9800' },
-      { icon: 'notifications-outline', label: 'Notifications', color: '#2196F3' },
-      { icon: 'shield-outline', label: 'Privacy & Security', color: '#4CAF50' },
-    ],
+    icon: 'shield-outline',
+    label: 'Privacy & Security',
+    color: '#4CAF50',
+    href: '/privacy-policy',
   },
-  {
-    section: 'Preferences',
-    items: [
-      { icon: 'language-outline', label: 'Language', value: 'English', color: '#9C27B0' },
-      { icon: 'moon-outline', label: 'Dark Mode', value: 'Off', color: '#607D8B' },
-      { icon: 'navigate-outline', label: 'Distance Unit', value: 'KM', color: Colors.primary },
-    ],
-  },
-  {
-    section: 'Support',
-    items: [
-      { icon: 'help-circle-outline', label: 'Help Center', color: '#FFB946' },
-      { icon: 'chatbox-outline', label: 'Contact Us', color: '#2196F3' },
-      { icon: 'star-outline', label: 'Rate App', color: '#FF6B6B' },
-      { icon: 'information-circle-outline', label: 'About', color: '#607D8B' },
-    ],
-  },
+];
+
+const supportMenuItems = [
+  { icon: 'help-circle-outline', label: 'Help Center', color: '#FFB946', href: '/contact-us' },
+  { icon: 'chatbox-outline', label: 'Contact Us', color: '#2196F3', href: '/contact-us' },
+  { icon: 'document-text-outline', label: 'Terms & Conditions', color: '#6C63FF', policyKey: 'terms' },
+  { icon: 'information-circle-outline', label: 'About', color: '#607D8B', href: '/about' },
 ];
 
 function initials(name, email) {
@@ -62,6 +54,7 @@ function initials(name, email) {
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, isAuthenticated, bootstrapping, signOut } = useAuth();
+  const [openPolicy, setOpenPolicy] = useState(null);
 
   const handleLogout = () => {
     Alert.alert('Log out', 'Are you sure you want to sign out?', [
@@ -98,6 +91,7 @@ export default function ProfileScreen() {
         </View>
 
         {isAuthenticated ? (
+          <TouchableOpacity activeOpacity={0.9} onPress={() => router.push('/profile-details')}>
           <LinearGradient
             colors={[Colors.primary, Colors.primaryDark]}
             start={{ x: 0, y: 0 }}
@@ -117,6 +111,14 @@ export default function ProfileScreen() {
                 {user?.user_code ? (
                   <Text style={styles.profileMeta}>ID: {user.user_code}</Text>
                 ) : null}
+                {user?.phone ? (
+                  <Text style={styles.profileMeta}>{user.phone}</Text>
+                ) : null}
+                {(user?.city || user?.district) && (
+                  <Text style={styles.profileMeta}>
+                    {[user.city, user.district].filter(Boolean).join(', ')}
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -128,7 +130,9 @@ export default function ProfileScreen() {
                 </View>
               ))}
             </View>
+            <Text style={styles.viewDetailsHint}>Tap to view full profile details</Text>
           </LinearGradient>
+          </TouchableOpacity>
         ) : (
           <View style={styles.guestCard}>
             <View style={styles.guestIconWrap}>
@@ -155,33 +159,71 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {isAuthenticated &&
-          menuItems.map((section, sIdx) => (
-            <View key={sIdx} style={styles.menuSection}>
-              <Text style={styles.sectionTitle}>{section.section}</Text>
-              <View style={styles.menuCard}>
-                {section.items.map((item, iIdx) => (
-                  <TouchableOpacity
-                    key={iIdx}
-                    style={[
-                      styles.menuItem,
-                      iIdx < section.items.length - 1 && styles.menuItemBorder,
-                    ]}
-                    activeOpacity={0.6}
-                  >
-                    <View style={[styles.menuIconBg, { backgroundColor: item.color + '15' }]}>
-                      <Ionicons name={item.icon} size={20} color={item.color} />
-                    </View>
-                    <Text style={styles.menuLabel}>{item.label}</Text>
-                    <View style={styles.menuRight}>
-                      {item.value && <Text style={styles.menuValue}>{item.value}</Text>}
-                      <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
+        {isAuthenticated && user?.address ? (
+          <TouchableOpacity
+            style={styles.addressCard}
+            onPress={() => router.push('/profile-address')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="location-outline" size={18} color={Colors.primary} />
+            <Text style={styles.addressText} numberOfLines={3}>{user.address}</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
+          </TouchableOpacity>
+        ) : null}
+
+        {isAuthenticated ? (
+          <View style={styles.menuSection}>
+            <Text style={styles.sectionTitle}>Account</Text>
+            <View style={styles.menuCard}>
+              {accountMenuItems.map((item, iIdx) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[
+                    styles.menuItem,
+                    iIdx < accountMenuItems.length - 1 && styles.menuItemBorder,
+                  ]}
+                  activeOpacity={0.6}
+                  onPress={() => {
+                    if (item.policyKey) setOpenPolicy(item.policyKey);
+                    else if (item.href) router.push(item.href);
+                  }}
+                >
+                  <View style={[styles.menuIconBg, { backgroundColor: item.color + '15' }]}>
+                    <Ionicons name={item.icon} size={20} color={item.color} />
+                  </View>
+                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
+                </TouchableOpacity>
+              ))}
             </View>
-          ))}
+          </View>
+        ) : null}
+
+        <View style={styles.menuSection}>
+          <Text style={styles.sectionTitle}>Support</Text>
+          <View style={styles.menuCard}>
+            {supportMenuItems.map((item, iIdx) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[
+                  styles.menuItem,
+                  iIdx < supportMenuItems.length - 1 && styles.menuItemBorder,
+                ]}
+                activeOpacity={0.6}
+                onPress={() => {
+                  if (item.policyKey) setOpenPolicy(item.policyKey);
+                  else if (item.href) router.push(item.href);
+                }}
+              >
+                <View style={[styles.menuIconBg, { backgroundColor: item.color + '15' }]}>
+                  <Ionicons name={item.icon} size={20} color={item.color} />
+                </View>
+                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
         {isAuthenticated ? (
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -193,9 +235,24 @@ export default function ProfileScreen() {
         <View style={styles.appInfo}>
           <Text style={styles.appName}>Logo</Text>
           <Text style={styles.appVersion}>Version 1.0.0</Text>
+          <View style={styles.legalLinks}>
+            <TouchableOpacity onPress={() => router.push('/privacy-policy')}>
+              <Text style={styles.legalLinkText}>Privacy Policy</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
+            <TouchableOpacity onPress={() => setOpenPolicy('terms')}>
+              <Text style={styles.legalLinkText}>Terms</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.appOwner}>© 2024 AurumFX Pvt Ltd</Text>
         </View>
       </ScrollView>
+
+      <PolicyModal
+        visible={Boolean(openPolicy)}
+        policyKey={openPolicy || 'privacy'}
+        onClose={() => setOpenPolicy(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -233,6 +290,29 @@ const styles = StyleSheet.create({
     ...Shadow.small,
   },
 
+  viewDetailsHint: {
+    textAlign: 'center',
+    fontSize: FontSize.xs,
+    color: 'rgba(255,255,255,0.65)',
+    marginTop: Spacing.md,
+  },
+  addressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    ...Shadow.small,
+  },
+  addressText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
   guestCard: {
     marginHorizontal: Spacing.xl,
     marginBottom: Spacing.xl,
@@ -445,6 +525,22 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textLight,
     marginTop: 2,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  legalLinkText: {
+    fontSize: FontSize.xs,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  legalDot: {
+    fontSize: FontSize.xs,
+    color: Colors.textLight,
   },
   appOwner: {
     fontSize: FontSize.xs,

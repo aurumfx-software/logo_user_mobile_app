@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { AppLocationProvider } from '../context/AppLocationContext';
 import { AuthProvider } from '../context/AuthContext';
 
 export {
@@ -40,6 +41,7 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
+      <AppLocationProvider>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -51,6 +53,16 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="sign-up" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="edit-profile" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="profile-details" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="profile-address" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="privacy-policy" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="contact-us" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="about" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen
+          name="policy/[key]"
+          options={{ headerShown: false, animation: 'slide_from_bottom', presentation: 'modal' }}
+        />
         <Stack.Screen
           name="business/[id]"
           options={{
@@ -66,6 +78,7 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+      </AppLocationProvider>
     </AuthProvider>
   );
 }

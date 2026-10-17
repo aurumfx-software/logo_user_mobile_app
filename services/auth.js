@@ -60,6 +60,16 @@ async function authRequest(path, { method = 'GET', body, token } = {}) {
   return json;
 }
 
+function stripEmpty(obj) {
+  const out = {};
+  Object.entries(obj).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    if (typeof v === 'string' && !v.trim()) return;
+    out[k] = typeof v === 'string' ? v.trim() : v;
+  });
+  return out;
+}
+
 export async function getStoredAccessToken() {
   return storageGet(STORAGE_KEYS.accessToken);
 }
@@ -78,12 +88,18 @@ async function saveSession({ access_token, refresh_token, user }) {
   if (user) await storageSet(STORAGE_KEYS.user, JSON.stringify(user));
 }
 
-export async function login({ email, password }) {
-  const json = await authRequest('/auth/login', {
-    method: 'POST',
-    body: { email: email.trim().toLowerCase(), password },
+/** Customer app login (email or phone + password). */
+export async function login({ email, password, phone }) {
+  const body = stripEmpty({
+    email: email?.trim().toLowerCase(),
+    phone: phone?.trim(),
+    password,
   });
-  const user = json.user || null;
+  if (!body.password) throw new Error('Password is required');
+  if (!body.email && !body.phone) throw new Error('Email or phone is required');
+
+  const json = await authRequest('/customer/login', { method: 'POST', body });
+  const user = json.customer || null;
   await saveSession({
     access_token: json.access_token,
     refresh_token: json.refresh_token,
@@ -92,17 +108,29 @@ export async function login({ email, password }) {
   return user;
 }
 
-export async function register({ name, email, password, phone }) {
-  await authRequest('/auth/register', {
-    method: 'POST',
-    body: {
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      password,
-      ...(phone?.trim() ? { phone: phone.trim() } : {}),
-    },
+/** Register customer with profile + location fields from OpenAPI CustomerRegisterRequest. */
+export async function register(payload) {
+  const body = stripEmpty({
+    name: payload.name,
+    email: payload.email?.toLowerCase(),
+    password: payload.password,
+    phone: payload.phone,
+    district: payload.district,
+    city: payload.city,
+    location: payload.location,
+    address: payload.address,
+    latitude: payload.latitude,
+    longitude: payload.longitude,
   });
-  return login({ email, password });
+
+  const json = await authRequest('/customer/register', { method: 'POST', body });
+  const user = json.customer || null;
+  await saveSession({
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    user,
+  });
+  return user;
 }
 
 export async function fetchCurrentUser() {
@@ -110,13 +138,51 @@ export async function fetchCurrentUser() {
   if (!token) return null;
 
   try {
-    const user = await authRequest('/auth/me', { token });
+    const user = await authRequest('/customer/me', { token });
     await storageSet(STORAGE_KEYS.user, JSON.stringify(user));
     return user;
   } catch {
     await clearSession();
     return null;
   }
+}
+
+export async function updateCustomerProfile({ name, phone, address, profile_picture }) {
+  const token = await getStoredAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const user = await authRequest('/auth/profile', {
+    method: 'PUT',
+    token,
+    body: stripEmpty({ name, phone, address, profile_picture }),
+  });
+  await storageSet(STORAGE_KEYS.user, JSON.stringify(user));
+  return user;
+}
+
+export async function updateCustomerLocation({
+  district,
+  city,
+  location,
+  address,
+  latitude,
+  longitude,
+}) {
+  const token = await getStoredAccessToken();
+  if (!token) throw new Error('Not signed in');
+  const user = await authRequest('/customer/location', {
+    method: 'PUT',
+    token,
+    body: stripEmpty({
+      district,
+      city,
+      location,
+      address,
+      latitude,
+      longitude,
+    }),
+  });
+  await storageSet(STORAGE_KEYS.user, JSON.stringify(user));
+  return user;
 }
 
 export async function getCachedUser() {

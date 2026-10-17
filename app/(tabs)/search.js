@@ -15,7 +15,10 @@ import { fetchMerchants } from '../../services/api';
 import useApi from '../../hooks/useApi';
 import { useLocalSearchParams } from 'expo-router';
 import BusinessCard from '../../components/BusinessCard';
+import LocationChip from '../../components/LocationChip';
 import SearchBar from '../../components/SearchBar';
+import { useAppLocation } from '../../context/AppLocationContext';
+import { filterMerchantsByArea } from '../../utils/geo';
 
 const matches = (b, q) => {
   const s = q.toLowerCase();
@@ -30,7 +33,8 @@ const matches = (b, q) => {
 };
 
 export default function SearchScreen() {
-  const { location } = useLocalSearchParams();
+  const { location: routeLocation } = useLocalSearchParams();
+  const { selection, displayLabel } = useAppLocation();
   const [query, setQuery] = useState('');
 
   const { data, loading } = useApi(
@@ -45,10 +49,17 @@ export default function SearchScreen() {
 
   const results = useMemo(() => {
     let list = businesses;
-    if (location) list = list.filter((b) => b.city.toLowerCase() === String(location).toLowerCase());
+    const areaFromRoute = routeLocation ? String(routeLocation) : null;
+    if (areaFromRoute) {
+      list = filterMerchantsByArea(list, areaFromRoute);
+    } else if (selection && selection.type !== 'state') {
+      const key =
+        selection.type === 'district' ? selection.district || selection.name : selection.name;
+      list = filterMerchantsByArea(list, key);
+    }
     if (query) list = list.filter((b) => matches(b, query));
     return list;
-  }, [businesses, location, query]);
+  }, [businesses, routeLocation, selection, query]);
 
   const handleSearch = useCallback((text) => setQuery(text), []);
 
@@ -70,7 +81,10 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>{location ? `Explore ${location}` : 'Explore'}</Text>
+        <Text style={styles.title}>
+          {routeLocation ? `Explore ${routeLocation}` : selection?.type !== 'state' ? displayLabel : 'Explore'}
+        </Text>
+        <LocationChip compact />
       </View>
 
       <View style={styles.searchWrapper}>
@@ -110,6 +124,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
   title: {
     fontSize: FontSize.xxl,
